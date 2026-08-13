@@ -345,6 +345,24 @@ top of `main.tf`. Pick what fits the project — Terraform merges all
 `*.tf` equivalently. Do NOT add a filename check; run the content check
 below instead.
 
+**Module composition guard (MANDATORY)**: before writing, list and read the
+existing `*.tf` files in the target directory. Preserve their declarations and
+add only the resources or attributes requested by the task. Across the complete
+module, declare exactly one `terraform { required_providers { ... } }` block,
+one default `provider "alicloud"` block, and one definition for each output
+name. If those declarations already exist, reference or update them; never
+emit duplicates in a new `main.tf`, `providers.tf`, `versions.tf`, or
+`outputs.tf`. For a request that explicitly asks only for additions to an
+existing configuration, do not add provider/version/variable boilerplate unless
+the existing module is missing it.
+
+**RDS instance password guard (MANDATORY)**: `alicloud_db_instance` does not
+accept `db_instance_password`, `password`, or equivalent database-account
+password arguments. Do not place a password variable on that resource. If the
+requirement explicitly includes creating a database account, create a separate
+`alicloud_rds_account` resource and use `account_password = var.<sensitive>`;
+otherwise leave account creation and passwords out of the instance definition.
+
 **Post-generation verification:** read `references/static-checks.md` and run
 the Provider Block Check. All three checks must return `OK`. If any fails, fix
 the offending content and re-run — do NOT proceed to Step 6 with failures.

@@ -60,6 +60,61 @@ resource "alicloud_db_instance" "this" {
 
 ---
 
+## VPC private subnet Internet egress through NAT Gateway
+
+**Trigger phrases**: "private subnet Internet access / 私有子网访问公网 /
+私网出网 / NAT 网关出网 / SNAT" applied to a VPC with private vSwitches.
+
+**Non-obvious requirement**: creating a NAT Gateway and binding an EIP does
+not by itself enable private-vSwitch egress. Each private vSwitch that must
+reach the Internet needs an `alicloud_snat_entry`. An Internet NAT Gateway
+automatically adds the default `0.0.0.0/0` route to the VPC route table, so do
+not invent a separate route table or route entry unless the user explicitly
+asks for custom routing.
+
+**Required additions to the Step 3 sketch**:
+
+| Resource | Required relation |
+| --- | --- |
+| `alicloud_eip_address` | Bound to the Internet NAT Gateway. |
+| `alicloud_eip_association` | `allocation_id` is the EIP ID; `instance_id` is the NAT Gateway ID. |
+| `alicloud_snat_entry` | One per private vSwitch; uses the NAT Gateway SNAT table, private vSwitch ID, and EIP address. |
+
+Before generation, include all three resources in Step 4's schema lookup and
+verify the NAT Gateway `network_type` is `"internet"` when it is set. Do not
+put `"Enhanced"` in `network_type`; that value belongs to `nat_type`.
+
+**Sketch**:
+
+```hcl
+resource "alicloud_nat_gateway" "this" {
+  vpc_id           = alicloud_vpc.this.id
+  vswitch_id       = alicloud_vswitch.public["a"].id
+  nat_gateway_name = "${var.name}-nat"
+  payment_type     = "PayAsYouGo"
+  nat_type         = "Enhanced"
+  network_type     = "internet"
+}
+
+resource "alicloud_eip_address" "nat" {
+  address_name = "${var.name}-nat-eip"
+}
+
+resource "alicloud_eip_association" "nat" {
+  allocation_id = alicloud_eip_address.nat.id
+  instance_id   = alicloud_nat_gateway.this.id
+}
+
+resource "alicloud_snat_entry" "private" {
+  for_each          = alicloud_vswitch.private
+  snat_table_id     = alicloud_nat_gateway.this.snat_table_ids
+  source_vswitch_id = each.value.id
+  snat_ip           = alicloud_eip_address.nat.ip_address
+}
+```
+
+---
+
 ## OSS lifecycle — current vs noncurrent versions
 
 **Trigger phrases**: "旧版本 / historical versions / noncurrent /
